@@ -1,0 +1,2461 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAO Exchange — Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0f1115',
+                        panel: '#181b21',
+                        border: '#2a2e37',
+                        primary: '#f59e0b',
+                        'primary-hover': '#d97706',
+                        green: '#10b981',
+                        red: '#ef4444'
+                    }
+                }
+            }
+        }
+    
+
+
+</script>
+    <style type="text/tailwindcss">
+        body { background-color: theme('colors.dark'); color: #e5e7eb; font-family: 'Inter', system-ui, sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .chat-bubble { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+        .chat-bubble.agent { background-color: rgba(229, 142, 56, 0.1); border: 1px solid #e58e38; color: #e58e38; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .chat-bubble.user { background-color: theme('colors.border'); color: #fff; align-self: flex-start; border-bottom-left-radius: 2px; }
+        
+        .nav-item { transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item.active { background-color: rgba(245, 158, 11, 0.1); border-left-color: theme('colors.primary'); color: theme('colors.primary'); }
+        .nav-item:hover:not(.active) { background-color: rgba(255, 255, 255, 0.05); }
+
+        .status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+        .status-new { background-color: rgba(245, 158, 11, 0.15); color: theme('colors.primary'); border: 1px solid rgba(245, 158, 11, 0.3); }
+        .status-paid { background-color: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .status-completed { background-color: rgba(16, 185, 129, 0.15); color: theme('colors.green'); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .status-cancelled { background-color: rgba(239, 68, 68, 0.15); color: theme('colors.red'); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .status-declined { background-color: rgba(239, 68, 68, 0.15); color: theme('colors.red'); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+        /* Custom scrollbar for tables */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: theme('colors.border'); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f4451; }
+    
+        /* Override Chrome Autofill Styles */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover, 
+        input:-webkit-autofill:focus, 
+        input:-webkit-autofill:active,
+        textarea:-webkit-autofill,
+        textarea:-webkit-autofill:hover,
+        textarea:-webkit-autofill:focus,
+        select:-webkit-autofill,
+        select:-webkit-autofill:hover,
+        select:-webkit-autofill:focus {
+            -webkit-box-shadow: 0 0 0 1000px #111827 inset !important; /* Tailwind bg-gray-900 */
+            -webkit-text-fill-color: #ffffff !important;
+            transition: background-color 5000s ease-in-out 0s;
+            caret-color: white;
+        }
+
+    </style>
+</head>
+<body class="h-screen overflow-hidden flex">
+
+    <!-- LOGIN MODAL -->
+    <div id="adminLoginModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-panel border border-border rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+            <h2 class="text-2xl font-bold text-white mb-2 flex items-center justify-center gap-2">
+                <svg class="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                Вход в CRM
+            </h2>
+            <p class="text-gray-400 text-sm mb-6">Введите пароль администратора</p>
+            <form onsubmit="handleAdminLogin(event)" class="text-left">
+                <input type="password" id="admin-pass-input" class="w-full bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition" placeholder="Пароль..." required>
+                <div id="admin-login-error" class="text-red text-sm mt-2 hidden"></div>
+                <button type="submit" id="admin-login-btn" class="w-full bg-primary hover:bg-primary-hover text-black font-bold py-3 rounded-lg mt-6 transition shadow-[0_0_15px_rgba(245,158,11,0.3)]">Авторизоваться</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="w-64 bg-panel border-r border-border flex flex-col h-full flex-shrink-0">
+        <div class="p-6 border-b border-border flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-orange-700 flex items-center justify-center font-bold text-black">M</div>
+            <span class="font-black text-white text-lg tracking-wider">MAO CRM</span>
+        </div>
+        
+        <div class="p-4">
+            <div class="flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full bg-green/10 text-green border border-green/20 w-max mb-6 transition-all duration-300">
+                <div id="ws-indicator" class="w-2 h-2 rounded-full bg-green animate-pulse"></div>
+                <span id="ws-status-text">WS SYNC OK</span>
+            </div>
+            
+            <nav class="space-y-1">
+                <button onclick="switchTab('orders')" id="nav-orders" class="nav-item active w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                    Ордера
+                    <span id="nav-orders-badge" class="ml-auto bg-primary text-black text-[10px] px-2 py-0.5 rounded-full font-bold hidden">0</span>
+                </button>
+                <button onclick="switchTab('chat')" id="nav-chat" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                    Чат поддержки
+                    <span id="nav-chat-badge" class="ml-auto bg-primary text-black text-[10px] px-2 py-0.5 rounded-full font-bold hidden">0</span>
+                </button>
+                <button onclick="switchTab('requisites')" id="nav-requisites" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                    Реквизиты сервиса
+                </button>
+                <button onclick="switchTab('users')" id="nav-users" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    Пользователи
+                </button>
+                <button onclick="switchTab('p2p')" id="nav-p2p" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    P2P Объявления
+                </button>
+                <button onclick="switchTab('p2pdeals')" id="nav-p2pdeals" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>
+                    P2P Сделки / Диспуты
+                </button>
+                <button onclick="switchTab('reviews')" id="nav-reviews" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                    Отзывы
+                </button>
+                <button onclick="switchTab('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-lg text-gray-300">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Настройки & Резервы
+                </button>
+            </nav>
+        </div>
+        
+        <div class="mt-auto p-4 border-t border-border">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-dark border border-border flex items-center justify-center">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                </div>
+                <div>
+                    <div class="text-sm font-bold text-white">Администратор</div>
+                    <div class="text-xs text-gray-500">Super Admin</div>
+                </div>
+            </div>
+            <button onclick="logoutAdmin()" class="w-full py-2 px-4 rounded-lg border border-border text-sm font-semibold text-gray-400 hover:text-white hover:border-gray-500 transition flex justify-center items-center gap-2">
+                Выход
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            </button>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col h-full bg-dark overflow-hidden relative">
+        
+        <!-- DASHBOARD STATS -->
+        <div class="p-6 pb-2 border-b border-border bg-panel/50 flex-shrink-0">
+            <div class="grid grid-cols-4 gap-4 mb-4">
+                <div class="bg-dark border border-border rounded-xl p-4 flex flex-col justify-center">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Всего заявок</div>
+                    <div class="text-2xl font-black text-white" id="stat-total-deals">0</div>
+                </div>
+                <div class="bg-dark border border-border rounded-xl p-4 flex flex-col justify-center">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Оплачено / В работе</div>
+                    <div class="text-2xl font-black text-primary" id="stat-active-deals">0</div>
+                </div>
+                <div class="bg-dark border border-border rounded-xl p-4 flex flex-col justify-center">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Оборот сегодня</div>
+                    <div class="text-2xl font-black text-green" id="stat-turnover">$0</div>
+                </div>
+                <div class="bg-dark border border-border rounded-xl p-4 flex flex-col justify-center">
+                    <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Чат поддержки</div>
+                    <div class="text-2xl font-black text-white" id="stat-chat-status">Live</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB CONTENT AREA -->
+        <div class="flex-1 overflow-hidden relative">
+            
+            <!-- ORDERS TAB -->
+            <div id="tab-orders" class="absolute inset-0 flex flex-col p-6 overflow-hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                        Матрица заявок
+                    </h1>
+                    <div class="flex items-center gap-3">
+                        <button onclick="exportOrdersCsv()" class="bg-dark hover:bg-white/10 text-primary border border-primary/30 hover:border-primary font-bold px-4 py-2 rounded-lg text-xs flex items-center gap-2 transition shadow-sm">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            Экспорт в CSV
+                        </button>
+                        <div class="flex gap-2 bg-panel p-1 rounded-lg border border-border" id="order-filters">
+                            <button onclick="filterOrders('all', this)" class="filter-btn active px-4 py-1.5 rounded-md text-sm font-bold bg-primary text-black shadow-md">Все</button>
+                            <button onclick="filterOrders('new', this)" class="filter-btn px-4 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:text-white transition">Новые</button>
+                            <button onclick="filterOrders('paid', this)" class="filter-btn px-4 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:text-white transition">Оплаченные</button>
+                            <button onclick="filterOrders('completed', this)" class="filter-btn px-4 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:text-white transition">Завершенные</button>
+                            <button onclick="filterOrders('cancelled', this)" class="filter-btn px-4 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:text-white transition">Отклоненные</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex-1 bg-panel border border-border rounded-2xl overflow-hidden flex flex-col shadow-lg">
+                    <div class="overflow-x-auto flex-1 relative">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead class="bg-dark text-gray-400 text-xs uppercase border-b border-border sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-6 py-4 font-bold">ID</th>
+                                    <th class="px-6 py-4 font-bold">Пользователь</th>
+                                    <th class="px-6 py-4 font-bold">Направление</th>
+                                    <th class="px-6 py-4 font-bold">Отдает</th>
+                                    <th class="px-6 py-4 font-bold">Получает</th>
+                                    <th class="px-6 py-4 font-bold">Реквизиты</th>
+                                    <th class="px-6 py-4 font-bold">Статус</th>
+                                    <th class="px-6 py-4 font-bold text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orders-table-body" class="divide-y divide-border text-gray-300">
+                                <tr><td colspan="8" class="text-center py-8 text-gray-500">Загрузка заявок...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHAT TAB -->
+            <div id="tab-chat" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <h1 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                    Диспетчер чатов (Live)
+                    <button onclick="fetchChatList()" class="bg-dark border border-border hover:bg-white/5 text-gray-400 hover:text-white p-1.5 rounded-md transition shadow-sm ml-2" title="Обновить">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
+                </h1>
+                <div class="flex-1 flex gap-6 overflow-hidden">
+                    <!-- Chat List -->
+                    <div class="w-80 bg-panel border border-border rounded-2xl flex flex-col overflow-hidden shadow-lg flex-shrink-0">
+                        <div class="p-4 border-b border-border bg-dark/50">
+                            <input type="text" placeholder="Поиск пользователя..." class="w-full bg-dark border border-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary">
+                        </div>
+                        <div class="flex-1 overflow-y-auto" id="chat-users-list">
+                            <div class="p-4 text-center text-gray-500 text-sm">Загрузка чатов...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Chat Window -->
+                    <div class="flex-1 bg-panel border border-border rounded-2xl flex flex-col overflow-hidden shadow-lg relative">
+                        <!-- Chat Header -->
+                        <div class="p-4 border-b border-border bg-dark/50 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-dark border border-border flex items-center justify-center font-bold text-white" id="active-chat-avatar">?</div>
+                                <div>
+                                    <div class="font-bold text-white" id="active-chat-name">Выберите чат</div>
+                                    <div class="text-xs text-gray-500" id="active-chat-status">Ожидание...</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Chat History -->
+                        <div class="flex-1 p-6 overflow-y-auto flex flex-col gap-4" id="chat-history-box">
+                            <div class="m-auto text-gray-500 text-sm">← Выберите пользователя слева, чтобы начать диалог</div>
+                        </div>
+                        
+                        <!-- Chat Input -->
+                        <div class="p-4 border-t border-border bg-dark/50">
+                            <form onsubmit="sendAdminMessage(event)" class="flex gap-3">
+                                <input type="text" id="chat-reply-input" disabled class="flex-1 bg-dark border border-border rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary disabled:opacity-50 transition" placeholder="Введите сообщение оператора..." autocomplete="off">
+                                <button type="submit" id="chat-send-btn" disabled class="bg-primary hover:bg-primary-hover text-black font-bold px-6 py-3 rounded-xl transition shadow-[0_0_10px_rgba(245,158,11,0.2)] disabled:opacity-50 disabled:shadow-none">Отправить</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- REQUISITES TAB -->
+            <div id="tab-requisites" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                            Пул реквизитов сервиса
+                        </h1>
+                        <p class="text-xs text-gray-400 mt-1">Автоматическое распределение по нагрузке, балансировка и контроль суточных лимитов карт и кошельков</p>
+                    </div>
+                    <button onclick="openAddRequisiteModal()" class="bg-primary hover:bg-primary-hover text-black font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                        <span>+</span> Добавить реквизит
+                    </button>
+                </div>
+
+                <div class="flex-1 bg-panel border border-border rounded-2xl overflow-hidden flex flex-col shadow-lg">
+                    <div class="overflow-x-auto flex-1 relative">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead class="bg-dark text-gray-400 text-xs uppercase border-b border-border sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-6 py-4 font-bold">ID</th>
+                                    <th class="px-6 py-4 font-bold">Валюта</th>
+                                    <th class="px-6 py-4 font-bold">Банк / Сеть</th>
+                                    <th class="px-6 py-4 font-bold">Получатель</th>
+                                    <th class="px-6 py-4 font-bold">Номер карты / Адрес</th>
+                                    <th class="px-6 py-4 font-bold">Суточный оборот / Лимит</th>
+                                    <th class="px-6 py-4 font-bold">Статус</th>
+                                    <th class="px-6 py-4 font-bold text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requisites-table-body" class="divide-y divide-border text-gray-300">
+                                <tr><td colspan="8" class="text-center py-8 text-gray-500">Загрузка реквизитов...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- USERS TAB -->
+            <div id="tab-users" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                            Управление пользователями
+                            <button onclick="loadAdminUsers()" class="bg-dark border border-border hover:bg-white/5 text-gray-400 hover:text-white p-1.5 rounded-md transition shadow-sm ml-2" title="Обновить">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            </button>
+                        </h1>
+                        <p class="text-xs text-gray-400 mt-1">Клиенты, трейдеры, блокировка нарушителей и статус Verified Trader (V)</p>
+                    </div>
+                    <div class="w-72">
+                        <input type="text" id="users-search-input" oninput="filterUsersTable()" placeholder="Поиск по email, ID, TG..." class="w-full bg-dark border border-border rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-primary">
+                    </div>
+                </div>
+
+                <div class="flex-1 bg-panel border border-border rounded-2xl overflow-hidden flex flex-col shadow-lg">
+                    <div class="overflow-x-auto flex-1 relative">
+                        <table class="w-full text-left text-sm whitespace-nowrap">
+                            <thead class="bg-dark text-gray-400 text-xs uppercase border-b border-border sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-6 py-4 font-bold">ID</th>
+                                    <th class="px-6 py-4 font-bold">★</th>
+                                    <th class="px-6 py-4 font-bold">Пользователь</th>
+                                    <th class="px-6 py-4 font-bold">Wallet Address</th>
+                                    <th class="px-6 py-4 font-bold">Баланс (RUB)</th>
+                                    <th class="px-6 py-4 font-bold">Статус</th>
+                                    <th class="px-6 py-4 font-bold text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="divide-y divide-border text-gray-300">
+                                <tr><td colspan="6" class="text-center py-8 text-gray-500">Загрузка пользователей...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- P2P ADS TAB -->
+            <div id="tab-p2p" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <h1 class="text-2xl font-bold text-white mb-6">P2P Модерация объявлений</h1>
+                <div class="flex-1 overflow-y-auto scrollbar-hide flex flex-col gap-6 pb-20">
+                    <div class="bg-panel border border-border rounded-2xl p-6 shadow-lg flex-1 flex flex-col min-h-[400px]">
+                        <div class="overflow-x-auto flex-1 border border-border rounded-xl bg-dark">
+                            <table class="w-full text-left text-sm whitespace-nowrap">
+                                <thead class="bg-dark text-gray-400 text-xs uppercase border-b border-border sticky top-0">
+                                    <tr>
+                                        <th class="px-6 py-3 font-bold">Мейкер</th>
+                                        <th class="px-6 py-3 font-bold">Детали ордера</th>
+                                        <th class="px-6 py-3 font-bold">Контакты</th>
+                                        <th class="px-6 py-3 font-bold">Статус</th>
+                                        <th class="px-6 py-3 font-bold text-right">Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="p2p-table-body" class="divide-y divide-border text-gray-300">
+                                    <tr><td colspan="5" class="text-center py-4 text-gray-500">Загрузка...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- P2P DEALS & ARBITRATION TAB -->
+            <div id="tab-p2pdeals" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary"><path d="M12 3v18M3 7l6 9h6l6-9M6 7l6-4 6 4"/></svg>
+                            <span>P2P Сделки и Центр Арбитража</span>
+                            <button onclick="loadP2PDeals()" class="bg-dark border border-border hover:bg-white/5 text-gray-400 hover:text-white p-1.5 rounded-md transition shadow-sm ml-2" title="Обновить">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            </button>
+                        </h1>
+                        <p class="text-xs text-gray-400 mt-1">Мониторинг активных P2P сделок, чат с участниками и разрешение споров</p>
+                    </div>
+                </div>
+
+                <div class="flex-1 flex gap-6 overflow-hidden">
+                    <!-- Deal list -->
+                    <div class="w-80 bg-panel border border-border rounded-2xl flex flex-col overflow-hidden shadow-lg flex-shrink-0">
+                        <div class="p-4 border-b border-border bg-dark/50 flex justify-between items-center">
+                            <span class="font-bold text-white text-sm">Сделки</span>
+                            <button onclick="loadP2PDeals()" class="text-xs text-primary hover:underline">Обновить</button>
+                        </div>
+                        <div id="p2p-deals-list" class="flex-1 overflow-y-auto divide-y divide-border">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Deal room and chat -->
+                    <div class="flex-1 bg-panel border border-border rounded-2xl flex flex-col overflow-hidden shadow-lg relative">
+                        <!-- Deal Header -->
+                        <div class="p-4 border-b border-border bg-dark/50 flex items-center justify-between">
+                            <div>
+                                <div class="font-bold text-white text-sm flex items-center gap-2">
+                                    <span id="p2p-deal-title">Выберите сделку слева</span>
+                                    <span id="p2p-deal-dispute-badge" class="hidden text-[10px] font-black px-2 py-0.5 rounded-full uppercase"></span>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-0.5" id="p2p-deal-active-info">Ожидание выбора...</div>
+                            </div>
+                            <!-- Action buttons -->
+                            <div class="flex items-center gap-2 flex-wrap justify-end">
+                                <div id="escrow-controls" class="hidden flex items-center gap-2 mr-2 border-r border-border pr-3">
+                                    <button onclick="setDealEscrowStep('paid')" class="bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                                        Подтвердить оплату (Step 2)
+                                    </button>
+                                    <button onclick="setDealEscrowStep('released')" class="bg-primary/20 text-primary hover:bg-primary hover:text-black border border-primary/30 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                                        Отпустить крипту (Step 3)
+                                    </button>
+                                </div>
+                                <div id="arbitration-controls" class="hidden flex items-center gap-2">
+                                    <button onclick="triggerArbitration('buyer')" class="bg-green/20 text-green hover:bg-green hover:text-white border border-green/30 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> В пользу Покупателя
+                                    </button>
+                                    <button onclick="triggerArbitration('seller')" class="bg-red/20 text-red hover:bg-red hover:text-white border border-red/30 px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> В пользу Продавца
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dispute alert banner -->
+                        <div id="dispute-alert-banner" class="hidden bg-red/10 border-b border-red/30 px-4 py-2.5 flex items-center justify-between text-xs text-red">
+                            <div class="flex items-center gap-2">
+                                <span class="animate-pulse font-bold">ВНИМАНИЕ:</span>
+                                <span class="font-bold">По этой сделке открыт арбитраж! Пожалуйста, проверьте квитанции в чате и вынесите вердикт.</span>
+                            </div>
+                        </div>
+
+                        <!-- Messages Container -->
+                        <div id="p2p-deal-messages" class="flex-1 p-6 overflow-y-auto flex flex-col gap-3">
+                            <div class="m-auto text-gray-500 text-sm">← Выберите сделку в списке слева для просмотра чата</div>
+                        </div>
+
+                        <!-- Message Input -->
+                        <div class="p-4 border-t border-border bg-dark/50">
+                            <form onsubmit="sendAdminP2PMessage(event)" class="flex flex-col gap-2">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Писать от лица:</span>
+                                    <select id="p2p-deal-sender-role" class="bg-dark border border-border rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-primary">
+                                        <option value="maker">Мейкера (Скрытно)</option>
+                                        <option value="taker">Тейкера (Скрытно)</option>
+                                        <option value="admin">Администратора</option>
+                                    </select>
+                                </div>
+                                <div class="flex gap-3">
+                                    <input type="text" id="p2p-deal-input" disabled class="flex-1 bg-dark border border-border rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary disabled:opacity-50 transition text-sm" placeholder="Введите сообщение..." autocomplete="off">
+                                    <button type="submit" id="p2p-deal-send" disabled class="bg-primary hover:bg-primary-hover text-black font-bold px-6 py-3 rounded-xl transition shadow-md disabled:opacity-50 disabled:shadow-none text-sm">Отправить</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Maker Info and Freeze Controls -->
+                    <div id="maker-info-panel" class="w-72 bg-panel border border-border rounded-2xl flex flex-col overflow-hidden shadow-lg hidden flex-shrink-0">
+                        <div class="p-4 border-b border-border bg-dark/50">
+                            <span class="font-bold text-white text-sm">Maker Info (Web3)</span>
+                        </div>
+                        <div class="p-4 flex flex-col gap-4">
+                            <div>
+                                <div class="text-xs text-gray-500">Wallet Address</div>
+                                <div id="maker-wallet-address" class="text-sm text-white font-mono break-all mt-1">-</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500">USDT Balance</div>
+                                <div id="maker-usdt-balance" class="text-sm text-white font-mono mt-1">-</div>
+                            </div>
+                            <div class="border-t border-border pt-4 mt-2">
+                                <div class="text-xs text-gray-500 mb-2">Web3 Freeze</div>
+                                <input type="number" id="admin-freeze-amount" placeholder="Сумма USDT" class="w-full bg-dark border border-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-primary text-sm mb-2" autocomplete="off">
+                                <button onclick="requestAdminFreeze()" class="w-full bg-red/20 text-red hover:bg-red hover:text-white border border-red/30 px-3 py-2 rounded-xl text-xs font-bold transition">Запросить заморозку</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- REVIEWS TAB -->
+            <div id="tab-reviews" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <h1 class="text-2xl font-bold text-white mb-6">⭐ Модерация отзывов</h1>
+                <div class="flex-1 overflow-y-auto scrollbar-hide flex flex-col gap-6 pb-20">
+                    <div class="bg-panel border border-border rounded-2xl p-6 shadow-lg flex-1 flex flex-col min-h-[400px]">
+                        <div class="overflow-x-auto flex-1 border border-border rounded-xl bg-dark">
+                            <table class="w-full text-left text-sm whitespace-nowrap">
+                                <thead class="bg-dark text-gray-400 text-xs uppercase border-b border-border sticky top-0">
+                                    <tr>
+                                        <th class="px-6 py-3 font-bold">Автор</th>
+                                        <th class="px-6 py-3 font-bold">Текст отзыва</th>
+                                        <th class="px-6 py-3 font-bold">Статус</th>
+                                        <th class="px-6 py-3 font-bold text-right">Действие</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reviews-table-body" class="divide-y divide-border text-gray-300">
+                                    <tr><td colspan="4" class="text-center py-4 text-gray-500">Загрузка...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SETTINGS & RESERVES TAB -->
+            <div id="tab-settings" class="absolute inset-0 flex flex-col p-6 overflow-hidden hidden">
+                <h1 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                    Настройки платформы и Резервы
+                </h1>
+                
+                <div class="flex-1 overflow-y-auto scrollbar-hide space-y-6 pb-24">
+                    
+                    <!-- KILL SWITCH CARD -->
+                    <div id="killswitch-card" class="border border-border rounded-2xl p-6 shadow-lg bg-panel transition-all">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div>
+                                <div class="flex items-center gap-3">
+                                    <span class="w-8 h-8 rounded-lg bg-red/10 border border-red/20 flex items-center justify-center text-red">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                                    </span>
+                                    <h2 class="text-lg font-bold text-white">Экстренная остановка (Kill Switch)</h2>
+                                    <span id="killswitch-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-green/10 text-green border border-green/20">В норме</span>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-2 max-w-xl">
+                                    Мгновенная блокировка создания любых новых ордеров на обмен на сайте. Используется при технических работах, сбоях банковских шлюзов или форс-мажоре.
+                                </p>
+                            </div>
+                            <div>
+                                <button id="killswitch-toggle-btn" onclick="toggleKillSwitch()" class="px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center gap-2">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                                    <span>Приостановить обмен</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MARGIN & SPREAD -->
+                    <div class="bg-panel border border-border rounded-2xl p-6 shadow-lg">
+                        <h2 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+                            Наценка / Маржа к рыночному курсу (%)
+                        </h2>
+                        <p class="text-xs text-gray-400 mb-4">Автоматически закладывается в формулу конвертации при создании ордера клиентом</p>
+                        <div class="flex gap-4 items-center">
+                            <input type="number" id="margin-percent-input" step="0.1" class="w-48 bg-dark border border-border rounded-xl px-4 py-2.5 text-white font-mono focus:outline-none focus:border-primary" value="1.5">
+                            <button onclick="saveMargin()" class="bg-primary hover:bg-primary-hover text-black font-bold px-6 py-2.5 rounded-xl transition shadow-md text-sm">Сохранить маржу</button>
+                        </div>
+                    </div>
+
+                    <!-- LIVE RESERVES EDITOR -->
+                    <div class="bg-panel border border-border rounded-2xl p-6 shadow-lg">
+                        <div class="flex justify-between items-center mb-4">
+                            <div>
+                                <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                    Управление резервами (Live Reserves)
+                                </h2>
+                                <p class="text-xs text-gray-400 mt-1">Отображаются на главной странице сайта и транслируются клиентам в реальном времени</p>
+                            </div>
+                            <button onclick="saveReserves()" class="bg-primary hover:bg-primary-hover text-black font-bold px-5 py-2 rounded-xl transition shadow-md text-xs">
+                                Сохранить резервы
+                            </button>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4" id="reserves-inputs-grid">
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">USDT (Tether)</label>
+                                <input type="number" id="reserve-input-USDT" step="1" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="450000">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">BTC (Bitcoin)</label>
+                                <input type="number" id="reserve-input-BTC" step="0.001" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="6.8">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">ETH (Ethereum)</label>
+                                <input type="number" id="reserve-input-ETH" step="0.01" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="45.0">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">RUB (Рубли Сбер/Т-Банк)</label>
+                                <input type="number" id="reserve-input-RUB" step="1000" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="28500000">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">SOL (Solana)</label>
+                                <input type="number" id="reserve-input-SOL" step="0.1" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="1200">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">TON (The Open Network)</label>
+                                <input type="number" id="reserve-input-TON" step="1" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="45000">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">TRX (Tron)</label>
+                                <input type="number" id="reserve-input-TRX" step="10" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="250000">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">USDC (USD Coin)</label>
+                                <input type="number" id="reserve-input-USDC" step="1" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="150000">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">BNB (Binance Coin)</label>
+                                <input type="number" id="reserve-input-BNB" step="0.1" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="850">
+                            </div>
+                            <div class="bg-dark border border-border rounded-xl p-3">
+                                <label class="text-xs text-gray-400 font-bold block mb-1">XRP (Ripple)</label>
+                                <input type="number" id="reserve-input-XRP" step="1" class="w-full bg-panel border border-border rounded-lg px-3 py-1.5 text-white text-sm font-mono focus:outline-none focus:border-primary" placeholder="95000">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DISABLED CURRENCIES GRID -->
+                    <div class="bg-panel border border-border rounded-2xl p-6 shadow-lg">
+                        <h2 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                            Доступность отдельных валют
+                        </h2>
+                        <p class="text-xs text-gray-400 mb-4">Нажмите на валюту, чтобы временно отключить или включить её на обменнике</p>
+                        <div class="flex flex-wrap gap-3" id="currency-toggles-grid">
+                            <!-- Populated via JS -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- EDIT REQUISITES MODAL -->
+    <div id="editReqModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-panel border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl relative">
+            <button onclick="closeEditModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white transition">✕</button>
+            <h2 class="text-xl font-bold text-white mb-1">Ред. Изменить реквизиты</h2>
+            <p id="edit-modal-order-id" class="text-primary text-sm font-bold mb-6">Ордер #---</p>
+            
+            <div class="mb-6">
+                <label class="block text-gray-400 text-xs font-bold mb-2 uppercase tracking-wide">Новые реквизиты клиента</label>
+                <input type="text" id="edit-requisites-input" class="w-full bg-dark border border-border rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary">
+            </div>
+            <button onclick="saveNewRequisites()" class="w-full bg-primary hover:bg-primary-hover text-black font-bold py-3 rounded-lg transition shadow-md">Сохранить изменения</button>
+        </div>
+    </div>
+
+    <!-- ADD SERVICE REQUISITE MODAL -->
+    <div id="addRequisiteModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-panel border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl relative">
+            <button onclick="closeAddRequisiteModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white transition">✕</button>
+            <h2 class="text-xl font-bold text-white mb-1 flex items-center gap-2">💳 Добавить реквизит в пул</h2>
+            <p class="text-gray-400 text-xs mb-6">Реквизит будет автоматически выдаваться клиентам при создании заявок</p>
+            
+            <form onsubmit="handleAddRequisiteSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Валюта</label>
+                    <select id="new-req-currency" class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-primary text-sm">
+                        <option value="RUB">RUB (Рубли - Карта / СБП)</option>
+                        <option value="USDT">USDT (Tether TRC-20)</option>
+                        <option value="BTC">BTC (Bitcoin Network)</option>
+                        <option value="ETH">ETH (Ethereum ERC-20)</option>
+                        <option value="TON">TON (The Open Network)</option>
+                        <option value="SOL">SOL (Solana)</option>
+                        <option value="TRX">TRX (Tron)</option>
+                        <option value="BNB">BNB (Binance Smart Chain)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Банк / Сеть</label>
+                    <input type="text" id="new-req-bank" placeholder="Сбербанк, Т-Банк, TRC-20..." required class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-primary">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Имя получателя / Название</label>
+                    <input type="text" id="new-req-name" placeholder="Иван И. или Main Deposit Wallet" required class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-primary">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Номер карты / Адрес кошелька</label>
+                    <input type="text" id="new-req-account" placeholder="2202... или T..." required class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-primary">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs font-bold mb-1 uppercase">Суточный лимит оборота (0 = без лимита)</label>
+                    <input type="number" id="new-req-limit" placeholder="500000" value="500000" step="1000" class="w-full bg-dark border border-border rounded-lg px-4 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-primary">
+                </div>
+                <button type="submit" class="w-full bg-primary hover:bg-primary-hover text-black font-bold py-3 rounded-lg transition shadow-md mt-2 text-sm">Добавить в пул</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRMATION MODAL (NO ALERT / CONFIRM) -->
+    <div id="adminConfirmModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-panel border border-border rounded-2xl p-6 max-w-md w-full shadow-2xl relative animate-in fade-in zoom-in duration-200">
+            <h2 id="admin-confirm-title" class="text-xl font-bold text-white mb-2">Подтверждение</h2>
+            <p id="admin-confirm-text" class="text-gray-400 text-sm mb-6 leading-relaxed">Вы уверены, что хотите выполнить это действие?</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeAdminConfirmModal()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-400 hover:text-white hover:bg-white/5 transition">Отмена</button>
+                <button id="admin-confirm-action-btn" onclick="executeAdminConfirmAction()" class="bg-primary hover:bg-primary-hover text-black font-bold px-5 py-2.5 rounded-xl transition shadow-lg text-sm">Подтвердить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CRM_API = '';
+        let socket = null;
+        
+        let allOrders = [];
+        let currentFilter = 'all';
+        let activeChatUserId = null;
+        let selectedOrderIdForEdit = null;
+        let unreadChats = new Set();
+        let systemMargin = 1.5;
+        let allRequisites = [];
+        let allUsers = [];
+        let currentAdminDealId = null;
+        let currentAdminDeal = null;
+        let p2pDealsInterval = null;
+        let isKillSwitchActive = false;
+        let disabledCurrenciesList = [];
+
+        const ALL_TABS = ['orders', 'chat', 'requisites', 'users', 'p2p', 'p2pdeals', 'reviews', 'settings'];
+        const SUPPORTED_CURRENCIES = ['USDT', 'BTC', 'ETH', 'RUB', 'SOL', 'TON', 'TRX', 'USDC', 'BNB', 'XRP'];
+
+        // ==================== AUDIO SYNTHESIS & TAB ALERT ====================
+        let audioCtx = null;
+        function getAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        // Cash register pleasant double chime for new orders
+        function playOrderSound() {
+            try {
+                const ctx = getAudioContext();
+                const now = ctx.currentTime;
+                
+                // Bell 1: 587.33 Hz (D5)
+                const osc1 = ctx.createOscillator();
+                const gain1 = ctx.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.setValueAtTime(587.33, now);
+                gain1.gain.setValueAtTime(0.25, now);
+                gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                osc1.connect(gain1);
+                gain1.connect(ctx.destination);
+                osc1.start(now);
+                osc1.stop(now + 0.35);
+
+                // Bell 2: 880 Hz (A5)
+                const osc2 = ctx.createOscillator();
+                const gain2 = ctx.createGain();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(880, now + 0.12);
+                gain2.gain.setValueAtTime(0.3, now + 0.12);
+                gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+                osc2.start(now + 0.12);
+                osc2.stop(now + 0.55);
+            } catch(e) {}
+        }
+
+        // Pleasant soft ping for new chat messages
+        function playChatSound() {
+            try {
+                const ctx = getAudioContext();
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.exponentialRampToValueAtTime(780, now + 0.18);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.28);
+            } catch(e) {}
+        }
+
+        let titleBlinkInterval = null;
+        let originalPageTitle = document.title || 'MAO Exchange — Admin Panel';
+
+        function triggerTabAlert(alertText) {
+            if (document.hasFocus()) return;
+            if (titleBlinkInterval) clearInterval(titleBlinkInterval);
+            let state = false;
+            titleBlinkInterval = setInterval(() => {
+                document.title = state ? alertText : originalPageTitle;
+                state = !state;
+            }, 900);
+        }
+
+        function clearTabAlert() {
+            if (titleBlinkInterval) {
+                clearInterval(titleBlinkInterval);
+                titleBlinkInterval = null;
+                document.title = originalPageTitle;
+            }
+        }
+        window.addEventListener('focus', clearTabAlert);
+
+        // ==================== TOAST & MODAL HELPERS (NO ALERT/CONFIRM) ====================
+        function showAdminToast(message, type = 'info') {
+            let container = document.getElementById('adminToastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'adminToastContainer';
+                container.className = 'fixed top-5 right-5 z-[9999] flex flex-col gap-3 pointer-events-none max-w-sm';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl text-sm font-semibold transition-all duration-300 transform translate-x-10 opacity-0 ${
+                type === 'success' ? 'bg-[#12241b] border-green/40 text-green shadow-[0_0_15px_rgba(16,185,129,0.2)]' :
+                type === 'error' ? 'bg-[#291316] border-red/40 text-red shadow-[0_0_15px_rgba(239,68,68,0.2)]' :
+                'bg-[#211b14] border-primary/40 text-primary shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+            }`;
+            
+            const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+            toast.innerHTML = `
+                <span class="w-6 h-6 rounded-full flex items-center justify-center bg-white/10 text-xs flex-shrink-0">${icon}</span>
+                <span class="flex-1 text-gray-200 text-xs leading-relaxed">${escapeHTML(message)}</span>
+            `;
+
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-x-10', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('translate-x-10', 'opacity-0');
+                setTimeout(() => toast.remove(), 350);
+            }, 3500);
+        }
+
+        let confirmModalCallback = null;
+        function openAdminConfirmModal(title, text, confirmBtnText = 'Подтвердить', isDanger = false, onConfirm) {
+            const modal = document.getElementById('adminConfirmModal');
+            if (!modal) return;
+            document.getElementById('admin-confirm-title').innerText = title;
+            document.getElementById('admin-confirm-text').innerText = text;
+            const btn = document.getElementById('admin-confirm-action-btn');
+            btn.innerText = confirmBtnText;
+            btn.className = isDanger 
+                ? 'bg-red hover:bg-red-600 text-white font-bold px-5 py-2.5 rounded-xl transition shadow-lg text-sm'
+                : 'bg-primary hover:bg-primary-hover text-black font-bold px-5 py-2.5 rounded-xl transition shadow-lg text-sm';
+            
+            confirmModalCallback = onConfirm;
+            modal.classList.remove('hidden');
+        }
+
+        function closeAdminConfirmModal() {
+            const modal = document.getElementById('adminConfirmModal');
+            if (modal) modal.classList.add('hidden');
+            confirmModalCallback = null;
+        }
+
+        function executeAdminConfirmAction() {
+            if (typeof confirmModalCallback === 'function') {
+                confirmModalCallback();
+            }
+            closeAdminConfirmModal();
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.toString().replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+
+        // ==================== TAB SWITCHING & ROUTING ====================
+        function switchTab(tabId) {
+            if (!ALL_TABS.includes(tabId)) tabId = 'orders';
+
+            document.querySelectorAll('.nav-item').forEach(el => {
+                el.classList.remove('active', 'bg-primary/10', 'text-primary', 'border-primary');
+                el.classList.add('text-gray-300', 'border-transparent');
+            });
+            
+            const activeBtn = document.getElementById('nav-' + tabId);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-gray-300', 'border-transparent');
+                activeBtn.classList.add('active', 'bg-primary/10', 'text-primary', 'border-primary');
+            }
+            
+            ALL_TABS.forEach(id => {
+                const el = document.getElementById('tab-' + id);
+                if (el) el.classList.add('hidden');
+            });
+            const targetTab = document.getElementById('tab-' + tabId);
+            if (targetTab) targetTab.classList.remove('hidden');
+
+            if (tabId === 'chat') {
+                const badge = document.getElementById('nav-chat-badge');
+                if (badge) { badge.classList.add('hidden'); badge.innerText = '0'; }
+                unreadChats.clear();
+            }
+            if (tabId === 'orders') {
+                const badge = document.getElementById('nav-orders-badge');
+                if (badge) { badge.classList.add('hidden'); badge.innerText = '0'; }
+            }
+
+            // Sync URL hash
+            if (window.location.hash !== '#' + tabId) {
+                window.history.replaceState(null, null, '#' + tabId);
+            }
+            localStorage.setItem('adminActiveTab', tabId);
+
+            // Lazy load tab data
+            if (tabId === 'orders') fetchInitialData();
+            if (tabId === 'chat') fetchChatList();
+            if (tabId === 'requisites') loadServiceRequisites();
+            if (tabId === 'users') loadAdminUsers();
+            if (tabId === 'p2p') loadP2PAds();
+            if (tabId === 'p2pdeals') loadP2PDeals();
+            if (tabId === 'reviews') loadAdminReviews();
+            if (tabId === 'settings') loadAdminSettings();
+
+            if (tabId !== 'p2pdeals' && p2pDealsInterval) {
+                clearInterval(p2pDealsInterval);
+                p2pDealsInterval = null;
+            }
+        }
+
+        window.addEventListener('hashchange', () => {
+            let hash = window.location.hash.replace('#', '');
+            if (ALL_TABS.includes(hash)) switchTab(hash);
+        });
+
+        // ==================== APP INITIALIZATION & AUTH ====================
+        document.addEventListener('DOMContentLoaded', async () => {
+            const isAuth = await checkAdminAuth();
+            if (isAuth) {
+                initializeApp();
+            } else {
+                document.getElementById('adminLoginModal').classList.remove('hidden');
+            }
+        });
+
+        async function checkAdminAuth() {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/me`, { credentials: 'include' });
+                const data = await res.json();
+                return data.authenticated === true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        async function handleAdminLogin(e) {
+            e.preventDefault();
+            const pass = document.getElementById('admin-pass-input').value;
+            const errEl = document.getElementById('admin-login-error');
+            const btn = document.getElementById('admin-login-btn');
+            errEl.classList.add('hidden');
+            btn.innerText = 'Вход...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/login`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pass })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    document.getElementById('adminLoginModal').classList.add('hidden');
+                    initializeApp();
+                } else {
+                    errEl.innerText = data.error || 'Неверный пароль';
+                    errEl.classList.remove('hidden');
+                }
+            } catch (err) {
+                errEl.innerText = 'Ошибка соединения с сервером';
+                errEl.classList.remove('hidden');
+            } finally {
+                btn.innerText = 'Авторизоваться';
+                btn.disabled = false;
+            }
+        }
+
+        async function logoutAdmin() {
+            await fetch(`${CRM_API}/api/admin/logout`, { method: 'POST', credentials: 'include' });
+            window.location.reload();
+        }
+
+        async function initializeApp() {
+            await fetchAdminRates();
+            fetchInitialData();
+            initWebSockets();
+            loadAdminReviews();
+
+            let hash = window.location.hash.replace('#', '');
+            if (!hash || !ALL_TABS.includes(hash)) {
+                hash = localStorage.getItem('adminActiveTab') || 'orders';
+            }
+            switchTab(hash);
+        }
+
+        // ==================== WEBSOCKETS ====================
+        function initWebSockets() {
+            socket = io(CRM_API, { withCredentials: true });
+
+            socket.on('connect', () => {
+                const indicator = document.getElementById('ws-indicator');
+                const text = document.getElementById('ws-status-text');
+                indicator.className = 'w-2 h-2 rounded-full bg-green animate-pulse';
+                indicator.parentElement.className = 'flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full bg-green/10 text-green border border-green/20 w-max mb-6 transition-all duration-300';
+                text.innerText = 'WS SYNC OK';
+                text.classList.replace('text-red', 'text-green');
+                
+                socket.emit('admin:join');
+            });
+
+            socket.on('disconnect', () => {
+                const indicator = document.getElementById('ws-indicator');
+                const text = document.getElementById('ws-status-text');
+                indicator.className = 'w-2 h-2 rounded-full bg-red';
+                indicator.parentElement.className = 'flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full bg-red/10 text-red border border-red/20 w-max mb-6 transition-all duration-300';
+                text.innerText = 'WS DISCONNECTED';
+                text.classList.replace('text-green', 'text-red');
+            });
+
+            socket.on('order:new', (order) => {
+                allOrders.unshift(order);
+                renderOrdersTable();
+                updateStatsFromOrders();
+                playOrderSound();
+                showBadge('orders');
+                triggerTabAlert(`(1) Новый ордер #${order.id}!`);
+                showAdminToast(`Новый ордер #${order.id}: ${order.amount_give} ${order.from_currency} ➔ ${order.to_currency}`, 'info');
+            });
+
+            socket.on('order:update', (updatedOrder) => {
+                const idx = allOrders.findIndex(o => o.id === updatedOrder.id);
+                if (idx !== -1) {
+                    allOrders[idx] = updatedOrder;
+                    renderOrdersTable();
+                    updateStatsFromOrders();
+                } else {
+                    fetchInitialData();
+                }
+            });
+
+            socket.on('chat:message_received', (msgData) => {
+                fetchChatList();
+                
+                if (activeChatUserId === msgData.chat_id) {
+                    appendMessageToHistory(msgData);
+                } else {
+                    unreadChats.add(msgData.chat_id);
+                    showBadge('chat');
+                    playChatSound();
+                    triggerTabAlert(`(1) Новое сообщение в поддержку!`);
+                }
+            });
+
+            socket.on('p2p_deal:update', (deal) => {
+                loadP2PDeals();
+                if (currentAdminDealId === deal.id) {
+                    currentAdminDeal = deal;
+                    updateDealHeaderInfo(deal);
+                }
+            });
+        }
+
+        function showBadge(type) {
+            const navBtn = document.getElementById(`nav-${type}`);
+            if (navBtn && navBtn.classList.contains('active')) return;
+            const el = document.getElementById(`nav-${type}-badge`);
+            if (el) {
+                let count = parseInt(el.innerText || '0') + 1;
+                el.innerText = count;
+                el.classList.remove('hidden');
+            }
+        }
+
+        // ==================== LIVE RATES & STATS ====================
+        let adminLivePrices = { 'RUB': 0.011, 'USDT': 1, 'USDC': 1 };
+        async function fetchAdminRates() {
+            try {
+                const res = await fetch('https://api.binance.com/api/v3/ticker/price');
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    data.forEach(item => {
+                        if (item.symbol.endsWith('USDT')) {
+                            const coin = item.symbol.replace('USDT', '');
+                            adminLivePrices[coin] = parseFloat(item.price);
+                        }
+                    });
+                }
+            } catch(e) {}
+        }
+
+        function updateStatsFromOrders() {
+            const total = allOrders.length;
+            const active = allOrders.filter(o => o.status === 'paid').length;
+            
+            const todayStart = new Date();
+            todayStart.setHours(0,0,0,0);
+            
+            const completedToday = allOrders.filter(o => {
+                if (o.status !== 'completed') return false;
+                const d = o.created_at ? new Date(o.created_at.replace(' ', 'T') + 'Z') : new Date();
+                return d.getTime() >= todayStart.getTime();
+            });
+            
+            let usdVolume = 0;
+            completedToday.forEach(o => {
+                const rate = adminLivePrices[o.from_currency] || 0;
+                usdVolume += parseFloat(o.amount_give || 0) * rate;
+            });
+            
+            const profit = usdVolume * (systemMargin / 100);
+
+            document.getElementById('stat-total-deals').innerText = total;
+            document.getElementById('stat-active-deals').innerText = active;
+            document.getElementById('stat-turnover').innerText = profit < 0.01 && profit > 0 ? '$0.01' : '$' + profit.toFixed(2);
+            document.getElementById('stat-turnover').previousElementSibling.innerText = 'ПРОФИТ СЕГОДНЯ (USDT)';
+        }
+
+        // ==================== ORDERS MATRIX & EXPORT ====================
+        async function fetchInitialData() {
+            try {
+                const ordersRes = await fetch(`${CRM_API}/api/admin/orders`, { credentials: 'include' });
+                if (ordersRes.ok) {
+                    allOrders = await ordersRes.json();
+                    renderOrdersTable();
+                    updateStatsFromOrders();
+                }
+                fetchChatList();
+            } catch (e) {}
+        }
+
+        function renderOrdersTable() {
+            const tbody = document.getElementById('orders-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            let filtered = allOrders;
+            if (currentFilter === 'new') {
+                const oneHourAgo = Date.now() - 3600 * 1000;
+                filtered = allOrders.filter(o => {
+                    const dateStr = o.created_at ? (o.created_at.includes('T') ? o.created_at : o.created_at.replace(' ', 'T') + 'Z') : null;
+                    const t = dateStr ? new Date(dateStr).getTime() : Date.now();
+                    return o.status === 'new' && (t >= oneHourAgo);
+                });
+            } else if (currentFilter !== 'all') {
+                filtered = allOrders.filter(o => o.status === currentFilter);
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-500">Нет заявок по выбранному фильтру</td></tr>`;
+                return;
+            }
+
+            filtered.forEach(order => {
+                const safeEmail = escapeHTML(order.email || order.client_name || 'TG User');
+                const userLabel = order.user_id ? `ID: ${order.user_id}` : (order.guest_id ? `Гость: ${escapeHTML(order.guest_id.slice(0, 10))}...` : 'Гость');
+                const safeWallet = escapeHTML(order.user_wallet || 'Не указаны');
+
+                let statusBadge = `<span class="status-badge status-${order.status}">${formatStatus(order.status)}</span>`;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/5 transition";
+                tr.innerHTML = `
+                    <td class="px-6 py-4 font-black text-primary">#${order.id}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-bold text-white">${safeEmail}</div>
+                        <div class="text-xs text-gray-500">${userLabel}</div>
+                    </td>
+                    <td class="px-6 py-4 font-bold text-gray-300">${order.from_currency} ➔ ${order.to_currency}</td>
+                    <td class="px-6 py-4 text-gray-300">${order.amount_give} ${order.from_currency}</td>
+                    <td class="px-6 py-4 font-bold text-green">${order.amount_get} ${order.to_currency}</td>
+                    <td class="px-6 py-4 text-xs text-gray-400 max-w-[200px] truncate" title="${safeWallet}">${safeWallet}</td>
+                    <td class="px-6 py-4">${statusBadge}</td>
+                    <td class="px-6 py-4 text-right flex justify-end gap-2">
+                        <button onclick="changeOrderStatus(${order.id}, 'complete')" class="bg-green/20 text-green hover:bg-green hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition">Выплачено</button>
+                        <button onclick="changeOrderStatus(${order.id}, 'cancel')" class="bg-red/20 text-red hover:bg-red hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition">Отклонить</button>
+                        <button onclick="openEditModal(${order.id})" class="bg-white/5 text-gray-300 hover:text-white hover:bg-white/20 px-3 py-1.5 rounded-md text-xs font-bold transition">Ред.</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function formatStatus(status) {
+            const map = { 'new': 'Новый', 'paid': 'Оплачен', 'completed': 'Завершен', 'cancelled': 'Отклонен', 'declined': 'Отклонен' };
+            return map[status] || status;
+        }
+
+        function filterOrders(status, btn) {
+            currentFilter = status;
+            document.querySelectorAll('#order-filters .filter-btn').forEach(b => {
+                b.className = "filter-btn px-4 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:text-white transition";
+            });
+            btn.className = "filter-btn active px-4 py-1.5 rounded-md text-sm font-bold bg-primary text-black shadow-md transition";
+            renderOrdersTable();
+        }
+
+        async function changeOrderStatus(orderId, action) {
+            try {
+                const res = await fetch(`${CRM_API}/api/orders/${orderId}/${action}`, { method: 'PATCH', credentials: 'include' });
+                if (!res.ok) throw new Error("API Error");
+                showAdminToast(`Статус ордера #${orderId} успешно изменен`, 'success');
+            } catch (e) {
+                showAdminToast(`Ошибка смены статуса ордера #${orderId}`, 'error');
+            }
+        }
+
+        function openEditModal(orderId) {
+            selectedOrderIdForEdit = orderId;
+            const order = allOrders.find(o => o.id === orderId);
+            document.getElementById('edit-modal-order-id').innerText = `Ордер #${orderId}`;
+            document.getElementById('edit-requisites-input').value = order ? (order.user_wallet || '') : '';
+            document.getElementById('editReqModal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editReqModal').classList.add('hidden');
+        }
+
+        async function saveNewRequisites() {
+            const newReq = document.getElementById('edit-requisites-input').value.trim();
+            if (!newReq) return;
+            try {
+                await fetch(`${CRM_API}/api/admin/orders/${selectedOrderIdForEdit}/requisites`, {
+                    method: 'PATCH', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requisites: newReq })
+                });
+                closeEditModal();
+                showAdminToast(`Реквизиты ордера #${selectedOrderIdForEdit} обновлены`, 'success');
+                fetchInitialData();
+            } catch (e) {
+                showAdminToast('Ошибка сохранения реквизитов', 'error');
+            }
+        }
+
+        function exportOrdersCsv() {
+            showAdminToast('Формирование CSV файла...', 'info');
+            window.location.href = `${CRM_API}/api/admin/orders/export`;
+        }
+
+        // ==================== SERVICE REQUISITES POOL ====================
+        async function loadServiceRequisites() {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/requisites`, { credentials: 'include' });
+                if (res.ok) {
+                    allRequisites = await res.json();
+                    renderRequisitesTable();
+                }
+            } catch(e) {
+                showAdminToast('Ошибка загрузки пула реквизитов', 'error');
+            }
+        }
+
+        function renderRequisitesTable() {
+            const tbody = document.getElementById('requisites-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (allRequisites.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-500">Пул реквизитов пуст. Нажмите "+ Добавить реквизит", чтобы создать карту или кошелек.</td></tr>`;
+                return;
+            }
+
+            allRequisites.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/5 transition";
+                const isAct = r.is_active === 1;
+                const limit = parseFloat(r.daily_limit) || 0;
+                const turnover = parseFloat(r.current_turnover) || 0;
+                const percent = limit > 0 ? Math.min(100, Math.round((turnover / limit) * 100)) : 0;
+                
+                const curBadge = r.currency === 'RUB' 
+                    ? '<span class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded text-xs font-bold">RUB</span>'
+                    : `<span class="bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded text-xs font-bold">${r.currency}</span>`;
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4 font-mono font-bold text-gray-400">#${r.id}</td>
+                    <td class="px-6 py-4">${curBadge}</td>
+                    <td class="px-6 py-4 font-bold text-white">${escapeHTML(r.bank_name || '-')}</td>
+                    <td class="px-6 py-4 text-gray-300 text-sm">${escapeHTML(r.recipient_name || '-')}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-white">
+                        <div class="flex items-center gap-2">
+                            <span>${escapeHTML(r.account_number)}</span>
+                            <button onclick="copyToClipboard('${escapeHTML(r.account_number)}')" class="text-gray-500 hover:text-primary transition" title="Скопировать">Копия</button>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="text-xs font-semibold text-gray-300">${turnover.toLocaleString()} / ${limit > 0 ? limit.toLocaleString() : '∞'} ${r.currency}</div>
+                        <div class="w-32 bg-dark rounded-full h-1.5 mt-1 overflow-hidden border border-border">
+                            <div class="h-full ${percent > 85 ? 'bg-red' : (percent > 60 ? 'bg-primary' : 'bg-green')}" style="width: ${percent}%"></div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        ${isAct ? '<span class="bg-green/10 text-green border border-green/20 px-2.5 py-1 rounded-full text-xs font-bold">Активен</span>' : '<span class="bg-red/10 text-red border border-red/20 px-2.5 py-1 rounded-full text-xs font-bold">Отключен</span>'}
+                    </td>
+                    <td class="px-6 py-4 text-right flex justify-end gap-2">
+                        <button onclick="toggleRequisiteActive(${r.id})" class="${isAct ? 'bg-red/20 text-red hover:bg-red hover:text-white' : 'bg-green/20 text-green hover:bg-green hover:text-white'} px-3 py-1.5 rounded-lg text-xs font-bold transition">
+                            ${isAct ? 'Выключить' : 'Включить'}
+                        </button>
+                        <button onclick="resetRequisiteTurnover(${r.id})" class="bg-white/5 text-gray-300 hover:text-white hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs font-bold transition" title="Сбросить суточный оборот">
+                            Сброс
+                        </button>
+                        <button onclick="deleteRequisite(${r.id})" class="bg-red/10 text-red hover:bg-red hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition" title="Удалить">
+                            ✕
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text);
+            showAdminToast('Скопировано в буфер обмена', 'info');
+        }
+
+        function openAddRequisiteModal() {
+            document.getElementById('addRequisiteModal').classList.remove('hidden');
+        }
+
+        function closeAddRequisiteModal() {
+            document.getElementById('addRequisiteModal').classList.add('hidden');
+        }
+
+        async function handleAddRequisiteSubmit(e) {
+            e.preventDefault();
+            const currency = document.getElementById('new-req-currency').value;
+            const bank_name = document.getElementById('new-req-bank').value.trim();
+            const recipient_name = document.getElementById('new-req-name').value.trim();
+            const account_number = document.getElementById('new-req-account').value.trim();
+            const daily_limit = parseFloat(document.getElementById('new-req-limit').value) || 0;
+
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/requisites`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ currency, bank_name, recipient_name, account_number, daily_limit })
+                });
+                if (res.ok) {
+                    closeAddRequisiteModal();
+                    showAdminToast('Новый реквизит добавлен в пул!', 'success');
+                    loadServiceRequisites();
+                } else {
+                    const d = await res.json();
+                    showAdminToast(d.error || 'Ошибка добавления', 'error');
+                }
+            } catch(e) {
+                showAdminToast('Ошибка соединения', 'error');
+            }
+        }
+
+        async function toggleRequisiteActive(id) {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/requisites/${id}/toggle`, {
+                    method: 'PUT', credentials: 'include'
+                });
+                if (res.ok) {
+                    showAdminToast('Статус активности реквизита изменен', 'success');
+                    loadServiceRequisites();
+                }
+            } catch(e) {
+                showAdminToast('Ошибка обновления статуса', 'error');
+            }
+        }
+
+        function resetRequisiteTurnover(id) {
+            openAdminConfirmModal(
+                'Сброс суточного оборота',
+                `Вы уверены, что хотите обнулить текущий оборот для реквизита #${id}?`,
+                'Обнулить оборот',
+                false,
+                async () => {
+                    try {
+                        const res = await fetch(`${CRM_API}/api/admin/requisites/${id}/reset_turnover`, {
+                            method: 'POST', credentials: 'include'
+                        });
+                        if (res.ok) {
+                            showAdminToast('Суточный оборот сброшен в 0', 'success');
+                            loadServiceRequisites();
+                        }
+                    } catch(e) {
+                        showAdminToast('Ошибка сброса', 'error');
+                    }
+                }
+            );
+        }
+
+        function deleteRequisite(id) {
+            openAdminConfirmModal(
+                'Удаление реквизита',
+                `Вы действительно хотите навсегда удалить реквизит #${id} из пула?`,
+                'Удалить',
+                true,
+                async () => {
+                    try {
+                        const res = await fetch(`${CRM_API}/api/admin/requisites/${id}`, {
+                            method: 'DELETE', credentials: 'include'
+                        });
+                        if (res.ok) {
+                            showAdminToast('Реквизит успешно удален', 'success');
+                            loadServiceRequisites();
+                        }
+                    } catch(e) {
+                        showAdminToast('Ошибка удаления', 'error');
+                    }
+                }
+            );
+        }
+
+        // ==================== USERS MANAGEMENT ====================
+        async function loadAdminUsers() {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/users`, { credentials: 'include' });
+                if (res.ok) {
+                    allUsers = await res.json();
+                    renderUsersTable(allUsers);
+                }
+            } catch(e) {
+                showAdminToast('Ошибка загрузки пользователей', 'error');
+            }
+        }
+
+        async function togglePinUser(userId) {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/users/${userId}/pin`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (res.ok) {
+                    loadAdminUsers();
+                } else {
+                    showAdminToast('Ошибка при закреплении', 'error');
+                }
+            } catch(e) {
+                showAdminToast('Ошибка при закреплении', 'error');
+            }
+        }
+
+        function renderUsersTable(usersToRender) {
+            const tbody = document.getElementById('users-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (usersToRender.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-500">Пользователи не найдены</td></tr>`;
+                return;
+            }
+
+            usersToRender.forEach(u => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-white/5 transition";
+                const isBanned = u.is_banned === 1;
+                const isVerifiedTrader = u.is_verified_trader === 1;
+                
+                const walletDisplay = u.wallet_address 
+                    ? `<div class="flex flex-col gap-1">
+                        <span class="font-mono text-xs text-gray-300" title="${u.wallet_address}">${u.wallet_address.substring(0, 6)}...${u.wallet_address.substring(u.wallet_address.length - 4)}</span>
+                        <div class="text-[10px] text-gray-400">Связанный баланс: <span class="text-white">${u.usdt_balance || '0.00'} USDT</span></div>
+                        <div id="btn-balance-wrapper-${u.id}"><button id="btn-balance-${u.id}" onclick="checkWalletBalance('${u.wallet_address}', 'btn-balance-${u.id}')" class="bg-primary/20 text-primary hover:bg-primary hover:text-black px-2 py-1 rounded text-[10px] font-bold transition">Проверить онлайн (API)</button></div>
+                       </div>`
+                    : '<span class="text-gray-500 text-xs">Не указан</span>';
+
+                let activityLogsHtml = `
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="balance-input-${u.id}" class="w-24 bg-dark border border-border rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-primary" value="${u.rub_balance || 0}" step="0.01">
+                        <span class="text-xs text-gray-400 font-bold">RUB</span>
+                        <button onclick="updateUserRubBalance(${u.id})" class="bg-primary/20 text-primary hover:bg-primary hover:text-black px-2 py-1.5 rounded-lg text-xs font-bold transition ml-2 whitespace-nowrap">
+                            Изменить
+                        </button>
+                    </div>
+                `;
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4 font-mono font-bold text-gray-400">#${u.id}</td>
+                    <td class="px-6 py-4">
+                        <button onclick="togglePinUser(${u.id})" class="text-xl ${u.is_pinned ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-400'} transition" title="Закрепить/Открепить">★</button>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="font-bold text-white">${escapeHTML(u.display_name || 'Без имени')}</div>
+                        <div class="text-xs text-gray-500">${escapeHTML(u.email || 'Email не указан')}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        ${walletDisplay}
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex flex-col gap-1">
+                            ${activityLogsHtml}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        ${isBanned ? '<span class="bg-red/20 text-red border border-red/30 px-2.5 py-1 rounded-full text-xs font-bold">Заблокирован</span>' : '<span class="bg-green/10 text-green border border-green/20 px-2.5 py-1 rounded-full text-xs font-bold">Активен</span>'}
+                    </td>
+                    <td class="px-6 py-4 text-right flex justify-end gap-2">
+                        <button onclick="toggleUserBan(${u.id}, ${isBanned})" class="${isBanned ? 'bg-green/20 text-green hover:bg-green hover:text-white' : 'bg-red/20 text-red hover:bg-red hover:text-white'} px-3 py-1.5 rounded-lg text-xs font-bold transition">
+                            ${isBanned ? 'Разблокировать' : 'Заблокировать'}
+                        </button>
+                        <button onclick="toggleUserTraderVerify(${u.id})" class="bg-white/5 text-gray-300 hover:text-white hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs font-bold transition" title="Переключить статус проверенного мерчанта">
+                            ${isVerifiedTrader ? 'Снять V' : 'Дать V'}
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function checkWalletBalance(walletAddress, btnId) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            btn.innerText = 'Загрузка...';
+            btn.disabled = true;
+            try {
+                if (walletAddress.startsWith('T')) {
+                    const response = await fetch(`https://api.trongrid.io/v1/accounts/${walletAddress}`);
+                    const data = await response.json();
+                    let usdtBal = 0;
+                    if (data.success && data.data && data.data[0] && data.data[0].trc20) {
+                        for (let token of data.data[0].trc20) {
+                            if (token['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t']) {
+                                usdtBal = token['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'] / 1000000;
+                            }
+                        }
+                    }
+                    btn.parentElement.innerHTML = `<span class="text-green font-bold text-xs">${usdtBal.toFixed(2)} USDT (TRC20)</span>`;
+                    return;
+                }
+
+                const provider = new ethers.providers.JsonRpcProvider('https://bsc-dataseed.binance.org/');
+                const contractAddress = '0x55d398326f99059fF775485246999027B3197955'; // USDT on BSC
+                const abi = ["function balanceOf(address owner) view returns (uint256)"];
+                const contract = new ethers.Contract(contractAddress, abi, provider);
+                const balance = await contract.balanceOf(walletAddress);
+                const formattedBalance = ethers.utils.formatUnits(balance, 18);
+                btn.parentElement.innerHTML = `<span class="text-green font-bold text-xs">${parseFloat(formattedBalance).toFixed(2)} USDT (BEP20)</span>`;
+            } catch (err) {
+                console.error('Error checking balance:', err);
+                btn.innerText = 'Ошибка';
+                btn.disabled = false;
+            }
+        }
+
+
+        function filterUsersTable() {
+            const query = (document.getElementById('users-search-input').value || '').toLowerCase().trim();
+            if (!query) {
+                renderUsersTable(allUsers);
+                return;
+            }
+            const filtered = allUsers.filter(u => {
+                return (String(u.id).includes(query)) ||
+                       (u.email && u.email.toLowerCase().includes(query)) ||
+                       (u.display_name && u.display_name.toLowerCase().includes(query)) ||
+                       (u.telegram_username && u.telegram_username.toLowerCase().includes(query)) ||
+                       (u.telegram_id && String(u.telegram_id).includes(query)) ||
+                       (u.phone && u.phone.includes(query));
+            });
+            renderUsersTable(filtered);
+        }
+
+        async function updateUserRubBalance(userId) {
+            const input = document.getElementById(`balance-input-${userId}`);
+            if (!input) return;
+            const newBalance = parseFloat(input.value);
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/users/${userId}/balance`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ rub_balance: newBalance })
+                });
+                if (res.ok) {
+                    showAdminToast('Баланс успешно обновлен', 'success');
+                    loadAdminUsers();
+                } else {
+                    showAdminToast('Ошибка обновления баланса', 'error');
+                }
+            } catch(e) {
+                showAdminToast('Ошибка сети', 'error');
+            }
+        }
+
+        function toggleUserBan(userId, isBanned) {
+            const actionText = isBanned ? 'разблокировать' : 'заблокировать';
+            openAdminConfirmModal(
+                `${isBanned ? 'Разблокировка' : 'Блокировка'} пользователя #${userId}`,
+                `Вы уверены, что хотите ${actionText} этого пользователя? ${isBanned ? 'Он снова сможет создавать ордера.' : 'Все его попытки создать обмен или P2P сделку будут заблокированы.'}`,
+                isBanned ? 'Разблокировать' : 'Заблокировать',
+                !isBanned,
+                async () => {
+                    try {
+                        const res = await fetch(`${CRM_API}/api/admin/users/${userId}/ban`, {
+                            method: 'POST', credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ banned: !isBanned })
+                        });
+                        if (res.ok) {
+                            showAdminToast(`Пользователь #${userId} успешно ${isBanned ? 'разблокирован' : 'заблокирован'}`, 'success');
+                            loadAdminUsers();
+                        }
+                    } catch(e) {
+                        showAdminToast('Ошибка смены статуса блокировки', 'error');
+                    }
+                }
+            );
+        }
+
+        async function toggleUserTraderVerify(userId) {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/users/${userId}/verify_trader`, {
+                    method: 'POST', credentials: 'include'
+                });
+                if (res.ok) {
+                    showAdminToast(`Статус Verified Trader для пользователя #${userId} обновлен`, 'success');
+                    loadAdminUsers();
+                }
+            } catch(e) {
+                showAdminToast('Ошибка обновления статуса Verified Trader', 'error');
+            }
+        }
+
+        // ==================== SETTINGS, KILL SWITCH & RESERVES ====================
+        async function loadAdminSettings() {
+            try {
+                // Load Margin
+                const setRes = await fetch(`${CRM_API}/api/settings`, { credentials: 'include' });
+                if (setRes.ok) {
+                    const settings = await setRes.json();
+                    if (settings.margin !== undefined) {
+                        systemMargin = settings.margin;
+                        document.getElementById('margin-percent-input').value = systemMargin;
+                    }
+                }
+
+                // Load Killswitch & Disabled Currencies
+                const ksRes = await fetch(`${CRM_API}/api/admin/killswitch`, { credentials: 'include' });
+                if (ksRes.ok) {
+                    const ksData = await ksRes.json();
+                    isKillSwitchActive = !!ksData.exchange_pause;
+                    disabledCurrenciesList = ksData.disabled_currencies || [];
+                    updateKillSwitchUI();
+                    renderCurrencyToggles();
+                }
+
+                // Load Reserves
+                const resRes = await fetch(`${CRM_API}/api/reserves`, { credentials: 'include' });
+                if (resRes.ok) {
+                    const reserves = await resRes.json();
+                    SUPPORTED_CURRENCIES.forEach(cur => {
+                        const input = document.getElementById(`reserve-input-${cur}`);
+                        if (input && reserves[cur] !== undefined) {
+                            input.value = reserves[cur];
+                        }
+                    });
+                }
+            } catch(e) {
+                showAdminToast('Ошибка загрузки настроек', 'error');
+            }
+        }
+
+        function updateKillSwitchUI() {
+            const badge = document.getElementById('killswitch-badge');
+            const btn = document.getElementById('killswitch-toggle-btn');
+            const card = document.getElementById('killswitch-card');
+
+            if (isKillSwitchActive) {
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-red/20 text-red border border-red/40 animate-pulse';
+                badge.innerText = 'ОБМЕНЫ ОСТАНОВЛЕНЫ';
+                btn.className = 'px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center gap-2 bg-green hover:bg-green-600 text-black';
+                btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>Возобновить работу сервиса</span>';
+                card.className = 'border-2 border-red/60 rounded-2xl p-6 shadow-[0_0_30px_rgba(239,68,68,0.25)] bg-red/5 transition-all';
+            } else {
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-green/10 text-green border border-green/20';
+                badge.innerText = 'В норме (обмены активны)';
+                btn.className = 'px-5 py-2.5 rounded-xl font-bold text-sm transition shadow-lg flex items-center gap-2 bg-red hover:bg-red-600 text-white';
+                btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> <span>Приостановить создание заявок</span>';
+                card.className = 'border border-border rounded-2xl p-6 shadow-lg bg-panel transition-all';
+            }
+        }
+
+        function toggleKillSwitch() {
+            const willPause = !isKillSwitchActive;
+            openAdminConfirmModal(
+                willPause ? 'Экстренная остановка платформы' : 'Возобновление работы платформы',
+                willPause 
+                    ? 'ВНИМАНИЕ: Создание всех новых заявок на обмен на сайте будет немедленно заблокировано! Клиенты увидят сообщение о техническом обслуживании. Вы уверены?'
+                    : 'Платформа возобновит штатный прием заявок от пользователей. Продолжить?',
+                willPause ? 'Да, приостановить обмен' : 'Да, возобновить',
+                willPause,
+                async () => {
+                    try {
+                        const res = await fetch(`${CRM_API}/api/admin/killswitch`, {
+                            method: 'POST', credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ pause: willPause })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            isKillSwitchActive = willPause;
+                            updateKillSwitchUI();
+                            showAdminToast(willPause ? 'Kill Switch АКТИВИРОВАН: Обмены остановлены!' : 'Kill Switch ОТКЛЮЧЕН: Обмены возобновлены', willPause ? 'error' : 'success');
+                        }
+                    } catch(e) {
+                        showAdminToast('Ошибка переключения Kill Switch', 'error');
+                    }
+                }
+            );
+        }
+
+        function renderCurrencyToggles() {
+            const grid = document.getElementById('currency-toggles-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+
+            SUPPORTED_CURRENCIES.forEach(cur => {
+                const isDisabled = disabledCurrenciesList.includes(cur);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.onclick = () => toggleCurrencyDisabled(cur);
+                btn.className = `flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition shadow-sm ${
+                    isDisabled 
+                        ? 'bg-red/10 border-red/40 text-red hover:bg-red/20' 
+                        : 'bg-dark border-border text-gray-300 hover:border-primary hover:text-white'
+                }`;
+                btn.innerHTML = `
+                    <span class="w-2 h-2 rounded-full ${isDisabled ? 'bg-red' : 'bg-green'}"></span>
+                    <span>${cur}</span>
+                    <span class="text-[10px] text-gray-500 ml-1 font-normal">${isDisabled ? 'Отключена' : 'Вкл'}</span>
+                `;
+                grid.appendChild(btn);
+            });
+        }
+
+        async function toggleCurrencyDisabled(cur) {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/toggle_currency`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ currency: cur })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    disabledCurrenciesList = data.disabled_currencies || [];
+                    renderCurrencyToggles();
+                    const nowDisabled = disabledCurrenciesList.includes(cur);
+                    showAdminToast(`Валюта ${cur} ${nowDisabled ? 'отключена на обменнике' : 'снова доступна для обмена'}`, nowDisabled ? 'error' : 'success');
+                }
+            } catch(e) {
+                showAdminToast('Ошибка переключения валюты', 'error');
+            }
+        }
+
+        async function saveMargin() {
+            const m = parseFloat(document.getElementById('margin-percent-input').value);
+            if (isNaN(m)) return showAdminToast('Укажите корректный процент маржи', 'error');
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/settings`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ margin: m })
+                });
+                if (res.ok) {
+                    systemMargin = m;
+                    updateStatsFromOrders();
+                    showAdminToast(`Маржа успешно сохранена: ${m}%`, 'success');
+                }
+            } catch(e) {
+                showAdminToast('Ошибка сохранения маржи', 'error');
+            }
+        }
+
+        async function saveReserves() {
+            const payload = {};
+            SUPPORTED_CURRENCIES.forEach(cur => {
+                const inp = document.getElementById(`reserve-input-${cur}`);
+                if (inp) {
+                    payload[cur] = parseFloat(inp.value) || 0;
+                }
+            });
+
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/reserves`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reserves: payload })
+                });
+                if (res.ok) {
+                    showAdminToast('Резервы успешно обновлены и синхронизированы с сайтом!', 'success');
+                }
+            } catch(e) {
+                showAdminToast('Ошибка сохранения резервов', 'error');
+            }
+        }
+
+        // ==================== P2P ADS MODERATION ====================
+        function loadP2PAds() {
+            fetch('/api/admin/p2p_ads', { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('p2p-table-body');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500">Нет объявлений для модерации</td></tr>';
+                    return;
+                }
+                data.forEach(ad => {
+                    const isApproved = ad.status === 'approved';
+                    let statusHtml = '';
+                    if (ad.status === 'approved') statusHtml = '<span class="text-green text-xs font-bold bg-green/10 px-2 py-1 rounded">Одобрен</span>';
+                    else if (ad.status === 'rejected') statusHtml = '<span class="text-red text-xs font-bold bg-red/10 px-2 py-1 rounded">Отклонен</span>';
+                    else statusHtml = '<span class="text-gray-400 text-xs font-bold bg-gray-600/30 px-2 py-1 rounded">Ожидает</span>';
+                    
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-white/5 transition";
+                    const verifiedBadge = ad.is_verified_trader ? '<span class="ml-2 text-[10px] bg-primary text-black px-1.5 py-0.5 rounded font-bold">V</span>' : '';
+                    const verifiedBtn = ad.is_verified_trader 
+                        ? `<button onclick="toggleVerifiedMaker(${ad.maker_id})" class="bg-red/20 text-red hover:bg-red hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition ml-2">Забрать 'V'</button>`
+                        : `<button onclick="toggleVerifiedMaker(${ad.maker_id})" class="bg-primary/20 text-primary hover:bg-primary hover:text-black px-3 py-1.5 rounded-md text-xs font-bold transition ml-2">Выдать 'V'</button>`;
+                    
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 font-bold text-white text-sm">
+                            ID: #${ad.id}<br>
+                            <span class="text-xs text-gray-400">Maker ID: ${ad.maker_id}</span>${verifiedBadge}
+                        </td>
+                        <td class="px-6 py-4 text-gray-300 text-sm">
+                            <div class="font-bold text-white mb-1">${ad.type === 'buy' ? 'Покупка (BUY)' : 'Продажа (SELL)'}</div>
+                            <span class="text-xs text-gray-400">${ad.crypto} за ${ad.fiat} | Курс: ${ad.price} | Лимит: ${ad.min_limit}-${ad.max_limit}</span>
+                        </td>
+                        <td class="px-6 py-4 text-gray-300 text-sm">
+                            ${escapeHTML(ad.email || ad.telegram_id || 'Неизвестно')}
+                        </td>
+                        <td class="px-6 py-4">
+                            ${statusHtml}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            ${!isApproved ? `<button onclick="moderateAd(${ad.id}, 'approved')" class="bg-green/20 text-green hover:bg-green hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition mr-2">Одобрить</button>` : ''}
+                            ${ad.status !== 'rejected' ? `<button onclick="moderateAd(${ad.id}, 'rejected')" class="bg-red/20 text-red hover:bg-red hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition">Отклонить</button>` : ''}
+                            ${verifiedBtn}
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            });
+        }
+
+        function moderateAd(id, status) {
+            if (status === 'rejected') {
+                openAdminConfirmModal(
+                    'Отклонение объявления',
+                    `Вы уверены, что хотите отклонить P2P объявление #${id}?`,
+                    'Отклонить',
+                    true,
+                    () => {
+                        fetch('/api/admin/p2p_ads/' + id + '/moderate', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status, admin_comment: 'Отклонено модератором' })
+                        }).then(() => {
+                            showAdminToast(`Объявление #${id} отклонено`, 'info');
+                            loadP2PAds();
+                        });
+                    }
+                );
+            } else {
+                fetch('/api/admin/p2p_ads/' + id + '/moderate', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status })
+                }).then(() => {
+                    showAdminToast(`Объявление #${id} одобрено!`, 'success');
+                    loadP2PAds();
+                });
+            }
+        }
+
+        function toggleVerifiedMaker(userId) {
+            fetch(`/api/admin/users/${userId}/verify_trader`, {
+                method: 'POST',
+                credentials: 'include'
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    showAdminToast('Статус Verified (V) обновлен!', 'success');
+                    loadP2PAds();
+                }
+            });
+        }
+
+        // ==================== P2P DEALS & ARBITRATION ====================
+        function loadP2PDeals() {
+            fetch('/api/admin/p2p_deals', { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => {
+                const list = document.getElementById('p2p-deals-list');
+                if (!list) return;
+                list.innerHTML = '';
+                if (!data || data.length === 0) {
+                    list.innerHTML = '<div class="p-6 text-center text-gray-500 text-sm">Нет активных P2P сделок</div>';
+                    return;
+                }
+                data.forEach(deal => {
+                    const div = document.createElement('div');
+                    const isDisputed = deal.dispute_status === 'disputed';
+                    const isSelected = deal.id === currentAdminDealId;
+                    
+                    div.className = `p-4 cursor-pointer hover:bg-white/5 transition flex flex-col gap-1 ${isSelected ? 'bg-primary/10 border-l-4 border-l-primary' : ''} ${isDisputed ? 'bg-red/5' : ''}`;
+                    div.onclick = () => openAdminDealChat(deal.id, deal);
+                    
+                    div.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-white text-sm">Сделка #${deal.id}</span>
+                            ${isDisputed ? '<span class="text-[10px] font-black text-red bg-red/20 border border-red/40 px-2 py-0.5 rounded-full animate-pulse">ДИСПУТ</span>' : `<span class="text-[10px] font-bold text-gray-400 uppercase">${deal.status}</span>`}
+                        </div>
+                        <div class="text-xs text-gray-400">Тейкер: <span class="text-white">${escapeHTML(deal.taker_name || 'ID ' + deal.taker_id)}</span></div>
+                        <div class="text-xs text-primary font-mono mt-0.5">
+                            ${deal.type === 'buy' ? 'Покупка' : 'Продажа'} ${deal.amount_crypto || '-'} ${deal.crypto || deal.asset || ''}
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
+            });
+        }
+
+        function openAdminDealChat(dealId, deal) {
+            currentAdminDealId = dealId;
+            currentAdminDeal = deal;
+            
+            updateDealHeaderInfo(deal);
+
+            document.getElementById('p2p-deal-input').disabled = false;
+            document.getElementById('p2p-deal-send').disabled = false;
+            
+            // Show Maker Info Panel
+            const makerPanel = document.getElementById('maker-info-panel');
+            if (makerPanel) {
+                makerPanel.classList.remove('hidden');
+                const wallet = deal.maker_wallet || deal.maker_address || (deal.maker && deal.maker.wallet) || 'Неизвестно';
+                const balance = deal.maker_balance != null ? deal.maker_balance : (deal.maker && deal.maker.balance != null ? deal.maker.balance : 'Неизвестно');
+                document.getElementById('maker-wallet-address').innerText = wallet;
+                document.getElementById('maker-usdt-balance').innerText = balance !== 'Неизвестно' ? balance + ' USDT' : balance;
+            }
+
+            loadAdminDealMessages();
+            if (p2pDealsInterval) clearInterval(p2pDealsInterval);
+            p2pDealsInterval = setInterval(loadAdminDealMessages, 3000);
+            
+            loadP2PDeals();
+        }
+
+        function requestAdminFreeze() {
+            if (!currentAdminDealId) return;
+            const amountInput = document.getElementById('admin-freeze-amount');
+            const amountValue = amountInput.value;
+            if (!amountValue || amountValue <= 0) {
+                showToast('Введите корректную сумму', 'error');
+                return;
+            }
+            if (typeof socket !== 'undefined') {
+                socket.emit('admin:request_freeze', { dealId: currentAdminDealId, amount: Number(amountValue) });
+                showToast('Запрос на заморозку отправлен', 'success');
+                amountInput.value = '';
+            } else {
+                showToast('Ошибка: socket не найден', 'error');
+            }
+        }
+
+        function updateDealHeaderInfo(deal) {
+            document.getElementById('p2p-deal-title').innerText = `Сделка #${deal.id} (${deal.type === 'buy' ? 'Покупка' : 'Продажа'} ${deal.amount_crypto || '-'} ${deal.crypto || deal.asset || ''})`;
+            document.getElementById('p2p-deal-active-info').innerText = `Тейкер: ${deal.taker_name || deal.taker_id} | Сумма: ${deal.amount_fiat || '-'} ${deal.fiat || 'RUB'} | Статус: ${deal.status.toUpperCase()}`;
+
+            const badge = document.getElementById('p2p-deal-dispute-badge');
+            const alertBanner = document.getElementById('dispute-alert-banner');
+            const arbitrationControls = document.getElementById('arbitration-controls');
+
+            if (deal.dispute_status === 'disputed') {
+                badge.className = 'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase bg-red/20 text-red border border-red/40 animate-pulse';
+                badge.innerText = 'ДИСПУТ ОТКРЫТ';
+                badge.classList.remove('hidden');
+                alertBanner.classList.remove('hidden');
+            } else if (deal.dispute_status === 'resolved_buyer') {
+                badge.className = 'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase bg-green/20 text-green border border-green/30';
+                badge.innerText = 'Решено в пользу покупателя';
+                badge.classList.remove('hidden');
+                alertBanner.classList.add('hidden');
+            } else if (deal.dispute_status === 'resolved_seller') {
+                badge.className = 'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase bg-primary/20 text-primary border border-primary/30';
+                badge.innerText = 'Решено в пользу продавца';
+                badge.classList.remove('hidden');
+                alertBanner.classList.add('hidden');
+            } else {
+                badge.classList.add('hidden');
+                alertBanner.classList.add('hidden');
+            }
+
+            // Show arbitration controls if deal is open or disputed
+            if (deal.status === 'open' || deal.dispute_status === 'disputed' || deal.status === 'paid') {
+                arbitrationControls.classList.remove('hidden');
+                document.getElementById('escrow-controls').classList.remove('hidden');
+            } else {
+                arbitrationControls.classList.add('hidden');
+                document.getElementById('escrow-controls').classList.add('hidden');
+            }
+
+            const garantControls = document.getElementById('garant-controls');
+            if (garantControls) {
+                if (deal.status === 'open' || deal.status === 'paid') {
+                    garantControls.classList.remove('hidden');
+                } else {
+                    garantControls.classList.add('hidden');
+                }
+            }
+
+        }
+        
+        async function setDealEscrowStep(step) {
+            if (!currentAdminDealId) return;
+            if (!(await window.maoConfirm('Вы уверены, что хотите обновить шаг эскроу на: ' + step + '?'))) return;
+            try {
+                const res = await fetch(`/api/admin/p2p_deals/${currentAdminDealId}/step`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step }),
+                    credentials: 'include'
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Шаг эскроу обновлен на ' + step, 'success');
+                    loadP2PDeals();
+                    loadAdminDealMessages();
+                } else {
+                    showToast(data.error || 'Ошибка обновления шага', 'error');
+                }
+            } catch(e) {
+                showToast('Ошибка сети', 'error');
+            }
+        }
+
+        
+        async function settleGarantDeal() {
+            if (!currentAdminDealId) return;
+            openAdminConfirmModal(
+                'Распределение активов',
+                'Вы уверены, что хотите завершить сделку? Криптовалюта будет отправлена Тейкеру. Убедитесь, что вы (Гарант) получили фиат от Тейкера.',
+                'Распределить',
+                false,
+                async () => {
+                    try {
+                        const res = await fetch(`/api/admin/deals/${currentAdminDealId}/settle`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include'
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            showAdminToast('Активы успешно распределены!', 'success');
+                            loadP2PDeals();
+                            loadAdminDealMessages();
+                        } else {
+                            showAdminToast(data.error || 'Ошибка', 'error');
+                        }
+                    } catch(e) {
+                        showAdminToast('Ошибка сети', 'error');
+                    }
+                }
+            );
+        }
+
+        function loadAdminDealMessages() {
+            if (!currentAdminDealId) return;
+            fetch(`/api/admin/p2p_deals/${currentAdminDealId}/messages`, { credentials: 'include' })
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('p2p-deal-messages');
+                if (!container || !Array.isArray(data)) return;
+                container.innerHTML = '';
+                if (data.length === 0) {
+                    container.innerHTML = '<div class="m-auto text-gray-500 text-sm">В этой сделке пока нет сообщений</div>';
+                    return;
+                }
+                data.forEach(msg => {
+                    const isAdmin = msg.sender_type === 'admin' || msg.sender_type === 'maker_admin';
+                    const div = document.createElement('div');
+                    div.className = `max-w-[80%] p-3.5 rounded-xl text-sm leading-relaxed ${
+                        msg.sender_type === 'admin'
+                            ? 'bg-primary/20 border border-primary/40 text-primary self-center font-medium my-1'
+                            : (isAdmin ? 'bg-primary text-black font-semibold self-end rounded-br-none' : 'bg-[#1e222b] text-white self-start rounded-bl-none border border-border')
+                    }`;
+                    
+                    let msgContent = escapeHTML(msg.message);
+                    if (msg.attachment_url) {
+                        if (msg.attachment_url.toLowerCase().endsWith('.pdf')) {
+                            msgContent += '<br/><a href="' + msg.attachment_url + '" target="_blank" class="text-blue-400 underline mt-1 block text-xs">📄 Скачать чек (PDF)</a>';
+                        } else {
+                            msgContent += '<br/><a href="' + msg.attachment_url + '" target="_blank"><img src="' + msg.attachment_url + '" class="max-w-full rounded mt-1 border border-white/10" style="max-height:150px;"/></a>';
+                        }
+                    }
+                    
+                    let badgeHtml = '';
+                    if (msg.sender_type === 'maker') {
+                        badgeHtml = '<div class="text-[9px] font-black uppercase tracking-wider text-green/70 mb-1">Maker</div>';
+                    } else if (msg.sender_type === 'taker') {
+                        badgeHtml = '<div class="text-[9px] font-black uppercase tracking-wider text-blue-400/70 mb-1">Taker</div>';
+                    } else if (msg.sender_type === 'admin') {
+                        badgeHtml = '<div class="text-[9px] font-black uppercase tracking-wider text-primary/70 mb-1">Admin</div>';
+                    } else if (msg.sender_type === 'maker_admin') {
+                        badgeHtml = '<div class="text-[9px] font-black uppercase tracking-wider text-green/70 mb-1">Admin (as Maker)</div>';
+                    }
+
+                    div.innerHTML = `
+                        ${badgeHtml}
+                        <div>${msgContent}</div>
+                        <div class="text-[10px] opacity-60 text-right mt-1 font-mono">${new Date(msg.created_at || Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
+                    `;
+                    container.appendChild(div);
+                });
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+
+        function sendAdminP2PMessage(e) {
+            if (e) e.preventDefault();
+            if (!currentAdminDealId) return;
+            const input = document.getElementById('p2p-deal-input');
+            const text = input.value.trim();
+            if (!text) return;
+            const roleSelect = document.getElementById('p2p-deal-sender-role');
+            const senderType = roleSelect ? roleSelect.value : 'admin';
+            
+            fetch(`/api/admin/p2p_deals/${currentAdminDealId}/messages`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text, sender_type: senderType })
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    input.value = '';
+                    loadAdminDealMessages();
+                } else {
+                    showAdminToast(data.error || 'Ошибка отправки', 'error');
+                }
+            });
+        }
+
+        function triggerArbitration(resolution) {
+            if (!currentAdminDealId) return;
+            const targetSideText = resolution === 'buyer' ? 'ПОКУПАТЕЛЯ (ордер завершится успешно)' : 'ПРОДАВЦА (ордер будет отменен)';
+            openAdminConfirmModal(
+                `Вынесение вердикта арбитража`,
+                `Вы собираетесь разрешить спор по сделке #${currentAdminDealId} в пользу ${targetSideText}. Соответствующее системное уведомление будет отправлено сторонам в чат. Продолжить?`,
+                `Выплатить в пользу ${resolution === 'buyer' ? 'покупателя' : 'продавца'}`,
+                resolution === 'seller',
+                async () => {
+                    try {
+                        const res = await fetch(`/api/admin/p2p_deals/${currentAdminDealId}/arbitrate`, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ resolution, reason: 'Проверка выписок и квитанций администратором' })
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            showAdminToast(`Решение по арбитражу вынесено в пользу ${resolution === 'buyer' ? 'покупателя' : 'продавца'}!`, 'success');
+                            loadAdminDealMessages();
+                            loadP2PDeals();
+                            if (currentAdminDeal) {
+                                currentAdminDeal.status = data.status;
+                                currentAdminDeal.dispute_status = data.dispute_status;
+                                updateDealHeaderInfo(currentAdminDeal);
+                            }
+                        } else {
+                            showAdminToast(data.error || 'Ошибка арбитража', 'error');
+                        }
+                    } catch(e) {
+                        showAdminToast('Ошибка сети при арбитраже', 'error');
+                    }
+                }
+            );
+        }
+
+        // ==================== REVIEWS MODERATION ====================
+        async function loadAdminReviews() {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/reviews`, { credentials: 'include' });
+                if (res.ok) {
+                    const reviews = await res.json();
+                    const tbody = document.getElementById('reviews-table-body');
+                    if (!tbody) return;
+                    tbody.innerHTML = '';
+                    reviews.forEach(r => {
+                        const isPending = r.status === 'pending';
+                        const tr = document.createElement('tr');
+                        tr.className = "hover:bg-white/5 transition";
+                        tr.innerHTML = `
+                            <td class="px-6 py-4 font-bold text-white">${escapeHTML(r.author)}</td>
+                            <td class="px-6 py-4 text-gray-400 whitespace-normal min-w-[200px] max-w-[400px] text-xs">${escapeHTML(r.text)}</td>
+                            <td class="px-6 py-4">
+                                ${isPending ? '<span class="text-primary text-xs font-bold bg-primary/10 px-2 py-1 rounded">На модерации</span>' : 
+                                   (r.status === 'approved' ? '<span class="text-green text-xs font-bold bg-green/10 px-2 py-1 rounded">Одобрен</span>' : '<span class="text-red text-xs font-bold bg-red/10 px-2 py-1 rounded">Удален</span>')}
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                ${isPending ? `<button onclick="approveReview(${r.id})" class="bg-green/20 text-green hover:bg-green hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition mr-2">Одобрить</button>` : ''}
+                                ${r.status !== 'deleted' ? `<button onclick="deleteReview(${r.id})" class="bg-red/20 text-red hover:bg-red hover:text-white px-3 py-1.5 rounded-md text-xs font-bold transition">Удалить</button>` : ''}
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        async function approveReview(id) {
+            await fetch(`${CRM_API}/api/admin/reviews/${id}/approve`, { method: 'POST', credentials: 'include' });
+            showAdminToast(`Отзыв #${id} одобрен`, 'success');
+            loadAdminReviews();
+        }
+
+        async function deleteReview(id) {
+            await fetch(`${CRM_API}/api/admin/reviews/${id}/delete`, { method: 'POST', credentials: 'include' });
+            showAdminToast(`Отзыв #${id} удален`, 'info');
+            loadAdminReviews();
+        }
+
+        // ==================== SUPPORT CHAT ====================
+        async function fetchChatList() {
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/support/chats`, { credentials: 'include' });
+                if (res.ok) {
+                    const chats = await res.json();
+                    renderChatList(chats);
+                }
+            } catch (e) {}
+        }
+
+        function renderChatList(chats) {
+            const listEl = document.getElementById('chat-users-list');
+            if (!listEl) return;
+            if (chats.length === 0) {
+                listEl.innerHTML = '<div class="p-4 text-center text-gray-500 text-sm">Нет активных диалогов</div>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            chats.forEach(c => {
+                const safeName = c.display_name || c.user_name || c.email || c.guest_id || 'User';
+                const initial = escapeHTML(safeName.charAt(0).toUpperCase());
+                const isActive = activeChatUserId === c.chat_id;
+                const isUnread = unreadChats.has(c.chat_id);
+                
+                const div = document.createElement('div');
+                div.className = `flex items-center gap-3 p-4 cursor-pointer border-b border-border transition ${isActive ? 'bg-primary/10 border-l-4 border-l-primary' : 'hover:bg-white/5'}`;
+                div.onclick = () => openChat(c.chat_id, safeName);
+                
+                
+                div.innerHTML = `
+                    <div class="w-10 h-10 rounded-full bg-dark border border-border flex items-center justify-center font-bold text-white flex-shrink-0 relative">
+                        ${initial}
+                        ${isUnread ? '<div class="absolute -top-1 -right-1 w-3 h-3 bg-red rounded-full border-2 border-dark"></div>' : ''}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-baseline mb-1">
+                            <h4 class="text-sm font-bold ${isUnread ? 'text-white' : 'text-gray-300'} truncate">${escapeHTML(safeName)}</h4>
+                            <span class="text-[10px] text-gray-500 whitespace-nowrap">${new Date(c.last_time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+                        </div>
+                        <p class="text-xs ${isUnread ? 'text-white font-semibold' : 'text-gray-500'} truncate">${escapeHTML(c.last_message || 'Без сообщений')}</p>
+                    </div>
+                `;
+                listEl.appendChild(div);
+            });
+        }
+
+        async function openChat(chatId, displayName) {
+            activeChatUserId = chatId;
+            unreadChats.delete(chatId);
+            
+            const safeName = displayName || 'User';
+            document.getElementById('active-chat-name').innerText = escapeHTML(safeName);
+            document.getElementById('active-chat-avatar').innerText = escapeHTML(safeName.charAt(0).toUpperCase());
+            document.getElementById('active-chat-status').innerText = 'Онлайн';
+            document.getElementById('active-chat-status').classList.replace('text-gray-500', 'text-green');
+            
+            const inp = document.getElementById('chat-reply-input');
+            const btn = document.getElementById('chat-send-btn');
+            inp.disabled = false;
+            btn.disabled = false;
+            inp.focus();
+
+            fetchChatList();
+
+            try {
+                const res = await fetch(`${CRM_API}/api/admin/support/messages/${chatId}`, { credentials: 'include' });
+                if (res.ok) {
+                    const messages = await res.json();
+                    renderChatHistory(messages);
+                }
+            } catch (e) {}
+        }
+
+        function renderChatHistory(messages) {
+            const box = document.getElementById('chat-history-box');
+            box.innerHTML = '';
+            
+            if (messages.length === 0) {
+                box.innerHTML = '<div class="m-auto text-gray-500 text-sm">Нет сообщений</div>';
+                return;
+            }
+
+            messages.forEach(m => appendMessageToHistory(m, false));
+            scrollToBottom();
+        }
+
+        function appendMessageToHistory(msg, scroll = true) {
+            const box = document.getElementById('chat-history-box');
+            if (msg.id && document.querySelector(`.chat-bubble[data-id="${msg.id}"]`)) {
+                return;
+            }
+
+            if (box.innerHTML.includes('Нет сообщений') || box.innerHTML.includes('← Выберите')) {
+                box.innerHTML = '';
+            }
+
+            const isAgent = msg.sender === 'agent';
+            const div = document.createElement('div');
+            div.className = `chat-bubble ${isAgent ? 'agent' : 'user'}`;
+            if (msg.id) div.setAttribute('data-id', msg.id);
+
+            let msgContent = escapeHTML(msg.message || '');
+            if (msg.attachment_url) {
+                if (msg.attachment_url.toLowerCase().endsWith('.pdf')) {
+                    msgContent += '<br/><a href="' + msg.attachment_url + '" target="_blank" class="text-blue-400 underline mt-1 block text-xs">📄 Скачать чек (PDF)</a>';
+                } else {
+                    msgContent += '<br/><a href="' + msg.attachment_url + '" target="_blank"><img src="' + msg.attachment_url + '" class="max-w-full rounded mt-1 border border-white/10" style="max-height:150px;"/></a>';
+                }
+            }
+
+            div.innerHTML = `
+                <div>${msgContent}</div>
+                <div class="${isAgent ? 'text-[10px] text-[#e58e38] opacity-70 text-right mt-1' : 'text-[10px] text-gray-400 text-right mt-1'}">${new Date(msg.created_at || Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
+            `;
+            box.appendChild(div);
+            if (scroll) scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            const box = document.getElementById('chat-history-box');
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function sendAdminMessage(e) {
+            e.preventDefault();
+            if (!activeChatUserId) return;
+            const input = document.getElementById('chat-reply-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            if (socket && socket.connected) {
+                socket.emit('admin:chat_send', {
+                    target_user_id: activeChatUserId,
+                    message: text
+                });
+                input.value = '';
+                fetchChatList();
+            } else {
+                fetch(`${CRM_API}/api/support/messages`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ override_user_id: activeChatUserId, message: text, sender: 'agent' })
+                }).then(() => {
+                    input.value = '';
+                    fetchChatList();
+                });
+            }
+        }
+    </script>
+
+    <!-- Custom MAO Alert/Confirm Modals -->
+    <div id="mao-alert-overlay" class="fixed inset-0 z-[10005] bg-black/80 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200" style="backdrop-filter: blur(5px);">
+        <div class="bg-gray-900 border border-primary rounded-xl shadow-[0_0_40px_rgba(229,142,56,0.15)] p-6 max-w-sm w-full text-center transform scale-95 transition-transform duration-200" id="mao-alert-box">
+            <div class="text-primary flex justify-center mb-4">
+                <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <div id="mao-alert-msg" class="text-white text-sm font-semibold mb-6 leading-relaxed break-words"></div>
+            <button id="mao-alert-btn" class="w-full bg-primary text-black font-black py-3 rounded-lg hover:bg-primary/90 transition shadow-[0_4px_15px_rgba(229,142,56,0.15)]" onclick="closeMaoAlert()">ПОНЯТНО</button>
+        </div>
+    </div>
+
+    <div id="mao-confirm-overlay" class="fixed inset-0 z-[10005] bg-black/80 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-200" style="backdrop-filter: blur(5px);">
+        <div class="bg-gray-900 border border-primary rounded-xl shadow-[0_0_40px_rgba(229,142,56,0.15)] p-6 max-w-sm w-full text-center transform scale-95 transition-transform duration-200" id="mao-confirm-box">
+            <div class="text-primary flex justify-center mb-4">
+                <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </div>
+            <div id="mao-confirm-msg" class="text-white text-sm font-semibold mb-6 leading-relaxed break-words"></div>
+            <div class="flex gap-3 justify-center">
+                <button id="mao-confirm-cancel" class="flex-1 bg-transparent border border-gray-700 text-gray-400 font-bold py-3 rounded-lg hover:bg-gray-800 transition">ОТМЕНА</button>
+                <button id="mao-confirm-ok" class="flex-1 bg-primary text-black font-black py-3 rounded-lg hover:bg-primary/90 transition shadow-[0_4px_15px_rgba(229,142,56,0.15)]">ПОДТВЕРДИТЬ</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function closeMaoAlert() {
+            const overlay = document.getElementById('mao-alert-overlay');
+            const box = document.getElementById('mao-alert-box');
+            overlay.classList.remove('opacity-100', 'pointer-events-auto');
+            box.classList.remove('scale-100');
+        }
+
+        // Override native alert globally
+        window.alert = function(msg) {
+            document.getElementById('mao-alert-msg').innerText = msg;
+            const overlay = document.getElementById('mao-alert-overlay');
+            const box = document.getElementById('mao-alert-box');
+            overlay.classList.add('opacity-100', 'pointer-events-auto');
+            box.classList.add('scale-100');
+        };
+
+        // Async confirm replacement
+        window.maoConfirm = function(msg) {
+            return new Promise((resolve) => {
+                document.getElementById('mao-confirm-msg').innerText = msg;
+                const overlay = document.getElementById('mao-confirm-overlay');
+                const box = document.getElementById('mao-confirm-box');
+                
+                overlay.classList.add('opacity-100', 'pointer-events-auto');
+                box.classList.add('scale-100');
+                
+                document.getElementById('mao-confirm-ok').onclick = function() {
+                    overlay.classList.remove('opacity-100', 'pointer-events-auto');
+                    box.classList.remove('scale-100');
+                    resolve(true);
+                };
+                document.getElementById('mao-confirm-cancel').onclick = function() {
+                    overlay.classList.remove('opacity-100', 'pointer-events-auto');
+                    box.classList.remove('scale-100');
+                    resolve(false);
+                };
+            });
+        };
+    </script>
+
+</body>
+</html>
